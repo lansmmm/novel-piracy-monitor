@@ -31,25 +31,6 @@ class BaiduMobileEngine(BaseEngine):
     # 广告卡片（品牌广告）不要
     AD_TOKENS = ('品牌广告',)
 
-    def _resolve_link(self, context, url):
-        """备用：点开跳转链，看最终落到哪个网址（正常用不上，卡片里就带着真实网址）"""
-        if not url or 'baidu.com' not in url:
-            return url
-        p = None
-        try:
-            p = self._create_stealth_page(context)
-            p.goto(url, wait_until="domcontentloaded", timeout=12000)
-            time.sleep(1.5)
-            return p.url
-        except Exception:
-            return url
-        finally:
-            if p:
-                try:
-                    p.close()
-                except Exception:
-                    pass
-
     @staticmethod
     def _real_url_from_click_info(raw):
         """从卡片的 data-click-info 里抠出真实网址（百度把原网址转义了两层）"""

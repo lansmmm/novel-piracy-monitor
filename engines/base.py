@@ -1,6 +1,6 @@
 # engines/base.py
 import re
-from urllib.parse import urlsplit, unquote
+from urllib.parse import urlsplit
 
 from utils import filter_summary, normalize_date, strip_date_from_text
 
@@ -116,50 +116,6 @@ class BaseEngine:
             result['title'] = result['url']
 
         return result
-
-    @staticmethod
-    def decode_redirect_url(url, keys=('url', 'u', 'target', 'to')):
-        """从跳转壳链接里解出真实落地页（支持多层嵌套）。
-
-        例：https://m.so.com/jump?u=https%3A%2F%2Fwww.hongxiu.com%2Fxx
-            → https://www.hongxiu.com/xx
-
-        对加密 token（如搜狗微信的 /link?url=dn9a_...）不会误当 URL，原样返回。
-        """
-        if not url:
-            return ''
-        cur = str(url).strip()
-        for _ in range(3):
-            if not cur.lower().startswith('http') or '?' not in cur:
-                return cur
-            raw_q = cur.split('?', 1)[1]
-            params = {}
-            for part in raw_q.split('&'):
-                if '=' not in part:
-                    continue
-                k, v = part.split('=', 1)
-                if k not in params:
-                    params[k] = v
-            nxt = ''
-            for k in keys:
-                if params.get(k):
-                    nxt = params[k]
-                    break
-            if not nxt:
-                return cur
-            val = nxt
-            for _ in range(3):
-                try:
-                    dec = unquote(val)
-                except Exception:
-                    break
-                if dec == val:
-                    break
-                val = dec
-            if not val.lower().startswith('http') or val == cur:
-                return cur
-            cur = val
-        return cur
 
     def _create_stealth_page(self, context):
         """创建一个带反爬虫伪装的新页面（公共方法）"""

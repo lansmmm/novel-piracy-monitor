@@ -34,7 +34,6 @@ class MonitorApp:
     COLOR_CARD         = "#FFFFFF"
     COLOR_BORDER       = "#E1E5EA"
     COLOR_PRIMARY      = "#2A9D8F"
-    COLOR_PRIMARY_DK   = "#21867A"
     COLOR_TEXT         = "#2F3542"
     COLOR_MUTED        = "#7A869A"
     COLOR_DANGER       = "#E63946"
@@ -69,7 +68,6 @@ class MonitorApp:
         self.root.configure(bg=self.COLOR_BG)
 
         self.is_monitoring = False
-        self.waiting_for_user = False
         self._stop_done = False      # 停止流程是否已执行过，避免日志重复
         self.headless = bool(DEFAULT_HEADLESS)
         self.deep_mode = False      # 深度模式：头条/搜狗/360 同时搜移动版 + PC 版
@@ -138,7 +136,6 @@ class MonitorApp:
         self.bookmark_checks = {}      # 书签前面的小方格：勾上的才批量监控
 
         self.font_normal = ("Microsoft YaHei", 10)
-        self.font_bold = ("Microsoft YaHei", 10, "bold")
         self.font_title = ("Microsoft YaHei", 11, "bold")
         self.font_small = ("Microsoft YaHei", 9)
         self.root.option_add("*Font", self.font_normal)
@@ -783,16 +780,6 @@ class MonitorApp:
     def _is_all_tree(tree):
         return len(tree["columns"]) == 7
 
-    def _tree_source_filter(self, tree):
-        if tree is self.tree_all:
-            return None
-        if self.tree_ai is not None and tree is self.tree_ai:
-            return 'baidu_zhinengti'
-        for tab_key, tab_info in self.engine_tabs.items():
-            if tree is tab_info["tree"]:
-                return tab_key
-        return None
-
     def get_row_urls(self, tree, item):
         vals = tree.item(item, "values")
         if self._is_all_tree(tree):
@@ -1292,10 +1279,6 @@ class MonitorApp:
             items.append(item)
         if items:
             tree.selection_add(items)
-
-    def clear_selection(self):
-        tree = self.current_tree()
-        tree.selection_remove(tree.selection())
 
     def toggle_current_selection(self):
         tree = self.current_tree()
@@ -2110,7 +2093,6 @@ class MonitorApp:
             return
         self._stop_done = True
         self.is_monitoring = False
-        self.waiting_for_user = False
 
         # 停止时：汇报本次运行全程的验证码/登录情况
         self._report_captcha_session()
@@ -2155,7 +2137,6 @@ class MonitorApp:
 
     def resume_from_user(self):
         """（弹窗版）直接继续，不再检查按钮状态"""
-        self.waiting_for_user = False
         self.log("✅ 用户已处理，继续监控")
         self.root.after(0, lambda: self.status_var.set("正在抓取..."))
 
@@ -2171,7 +2152,6 @@ class MonitorApp:
         if not self.captcha_warned:
             self.captcha_warned = True
             self.log_alert("⚠️ 前台模式：浏览器里出现验证码时，请完成验证。")
-        self.waiting_for_user = True
         self.log(f"⏸️ 暂停，等待用户处理：{reason}（浏览器页面已保留）")
         self.root.after(0, lambda: self.status_var.set(
             "⚠️ 请在浏览器处理验证码/登录，完成后点击「确定」"))

@@ -100,14 +100,3 @@ class SingleInstance:
 
         self._thread = threading.Thread(target=_wait, daemon=True)
         self._thread.start()
-
-    def release(self):
-        self._stop = True
-        for handle in (self._event, self._mutex):
-            try:
-                if handle:
-                    ctypes.windll.kernel32.CloseHandle(handle)
-            except Exception:
-                pass
-        self._event = None
-        self._mutex = None

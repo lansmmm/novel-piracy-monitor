@@ -88,27 +88,6 @@ def _book_texts(sufs):
     return out
 
 
-def _from_texts(texts, old=None):
-    old_map = {}
-    for s in (old or []):
-        if isinstance(s, dict):
-            old_map[str(s.get("text", "") or "")] = bool(s.get("enabled", True))
-        else:
-            old_map[str(s or "")] = True
-    out = []
-    seen = set()
-    for t in texts:
-        t = str(t or "").strip()
-        if t in seen:
-            continue
-        seen.add(t)
-        out.append({"text": t, "enabled": old_map.get(t, True)})
-    if "" not in seen:
-        out.insert(0, {"text": "", "enabled": True})
-    out.sort(key=lambda x: 0 if x["text"] == "" else 1)
-    return out
-
-
 # ==================== 引擎配置 ====================
 def _load_engine_overrides():
     try:

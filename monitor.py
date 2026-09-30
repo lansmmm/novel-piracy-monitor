@@ -36,7 +36,6 @@ class MonitorApp:
     COLOR_CARD         = "#FFFFFF"
     COLOR_BORDER       = "#E1E5EA"
     COLOR_PRIMARY      = "#2A9D8F"
-    COLOR_PRIMARY_DK   = "#21867A"
     COLOR_TEXT         = "#2F3542"
     COLOR_MUTED        = "#7A869A"
     COLOR_DANGER       = "#E63946"
@@ -71,7 +70,6 @@ class MonitorApp:
         self.root.configure(bg=self.COLOR_BG)
 
         self.is_monitoring = False
-        self.waiting_for_user = False
         self._stop_done = False      # 停止流程是否已执行过，避免日志重复
         self.headless = bool(DEFAULT_HEADLESS)
         self.deep_mode = False      # 深度模式：百度/头条/搜狗/360/知道 同时搜 pc + 移动 双渠道
@@ -161,9 +159,9 @@ class MonitorApp:
         self.icon_img = generate_icon()
         self.bookmark_buttons = []
         self.bookmark_checks = {}      # 书签前面的小方格：勾上的才批量监控
+        self.bookmark_select_all_var = tk.IntVar(value=0)   # 0=未选，1=全选，2=半选
 
         self.font_normal = ("Microsoft YaHei", 10)
-        self.font_bold = ("Microsoft YaHei", 10, "bold")
         self.font_title = ("Microsoft YaHei", 11, "bold")
         self.font_small = ("Microsoft YaHei", 9)
         self.root.option_add("*Font", self.font_normal)
@@ -460,18 +458,16 @@ class MonitorApp:
                                       insertbackground=self.COLOR_TEXT)
         self.entry_keyword.grid(row=r, column=1, padx=4, pady=4, ipady=5)
 
-        self._make_btn(top, "🔍 搜索词", self.edit_default_suffixes,
-                       bg="#E6EE9C", fg="#33691E", width=10).grid(row=r, column=2, padx=4)
         self._make_btn(top, "💾 保存为书签", self.add_bookmark,
-                       bg="#FFE082", fg="#5D4037", width=12).grid(row=r, column=3, padx=4)
+                       bg="#FFF3C4", fg="#8D6E00", width=12).grid(row=r, column=4, padx=(14, 4))
 
-        self.btn_patrol = self._make_btn(top, "🔍 巡逻一次", self.start_monitor_once,
-                                         bg=self.COLOR_WARNING, width=12, bold=True)
-        self.btn_patrol.grid(row=r, column=4, padx=(14, 4))
+        self.btn_patrol = self._make_btn(top, "🔍 搜索本书", self.start_monitor_once,
+                                         bg="#FFE0B2", fg="#9E5A00", width=12, bold=True)
+        self.btn_patrol.grid(row=r, column=3, padx=4)
 
         self.btn_stop = self._make_btn(top, "⛔ 停止", self.stop_monitor,
-                                       bg=self.COLOR_DANGER, width=8, bold=True)
-        self.btn_stop.config(state="disabled", bg="#B0BEC5", activebackground="#B0BEC5")
+                                       bg="#FFCDD2", fg="#B71C1C", width=8, bold=True)
+        self.btn_stop.config(state="disabled", bg="#ECEFF1", activebackground="#ECEFF1", fg="#9AA5B1")
         self.btn_stop.grid(row=r, column=5, padx=4)
 
         self.btn_clear_cookies = self._make_btn(top, "🧼 清cookies", self.clear_cookies_now,
@@ -480,22 +476,23 @@ class MonitorApp:
         self.btn_clear_cookies.grid(row=r, column=6, padx=4)
 
         self.btn_manual_search = self._make_btn(top, "🧭 手动搜索", self.open_manual_search_dialog,
-                                               bg="#8E24AA", fg="white", width=11, bold=True)
+                                               bg="#E1BEE7", fg="#6A1B9A", width=11, bold=True)
         self.btn_manual_search.grid(row=r, column=7, padx=4)
 
-        r = 2
+        r = 3
         # ★ 整行一个容器：右边两个按钮先 pack（先占位置），窗口拖窄时也不会被挤出窗口；
         #   左边的来源勾选框放在会自动换行的框里，窄了自动排到第二行
         src_row = tk.Frame(top, bg=self.COLOR_CARD)
         src_row.grid(row=r, column=0, columnspan=13, sticky="we", padx=(14, 12), pady=(4, 6))
 
-        tk.Label(src_row, text="监控来源", bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
+        tk.Label(src_row, text="搜索来源", bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
                  font=self.font_small).pack(side="left", padx=(0, 6))
 
-        self.btn_source_toggle = self._make_btn(
-            src_row, "🔄 全选/取消", self.toggle_all_source_checks,
-            bg="#B3E5FC", fg="#0D47A1", width=11, bold=True, small=True
-        )
+        self.btn_source_toggle = tk.Checkbutton(src_row, text="全选",
+                                                command=self.toggle_all_source_checks,
+                                                bg=self.COLOR_CARD, activebackground=self.COLOR_CARD,
+                                                fg="#0D47A1", font=("Microsoft YaHei", 9),
+                                                bd=0, highlightthickness=0, cursor="hand2")
         self.btn_source_toggle.pack(side="left", padx=(0, 8), pady=3)
 
         src_frame = tk.Frame(src_row, bg=self.COLOR_CARD)
@@ -507,7 +504,7 @@ class MonitorApp:
         self.source_vars = {}
         self._source_checks = []
         for src_id in VISIBLE_SRC_ORDER:
-            var = tk.BooleanVar(value=True)
+            var = tk.BooleanVar(value=False)
             self.source_vars[src_id] = var
             cb = tk.Checkbutton(
                 src_frame, text=self._source_display_name(src_id), variable=var,
@@ -526,49 +523,40 @@ class MonitorApp:
         self._schedule_reflow(self.src_flow, self._reflow_source_checks, (120, 400, 900))
 
         # ---------- 书签卡片 ----------
-        card_outer, bk = self._card(self.root,
-                                    "书签  ·  左键填入 / 双击监控 / 右键菜单 / 勾选后点「📚 批量监控」")
-        card_outer.pack(fill="x", padx=12, pady=(0, 6))
-        # ★ 书签卡片分两行：第一行是【批量监控 / 间隔 / 页数】，第二行起是书签按钮
-        #   （书签多了会自动换行到第二行、第三行…，不会互相重叠、也不会顶出窗口）
-        self.bookmark_ctrl = tk.Frame(bk, bg=self.COLOR_CARD)
-        self.bookmark_ctrl.pack(fill="x", padx=12, pady=(0, 2))
+        card_outer, bk = self._card(top, "书签  ·  左键填入 / 双击搜索 / 右键菜单")
+        card_outer.grid(row=2, column=0, columnspan=13, sticky="we", padx=(14, 12), pady=(4, 6))
 
-        # ★ 书签全选/取消按钮（批量监控的左边）
-        self.btn_select_all = self._make_btn(self.bookmark_ctrl, "🔄 全选/取消",
-                                             self.toggle_all_bookmarks,
-                                             bg="#B3E5FC", fg="#0D47A1",
-                                             width=10, bold=True, small=True)
-        self.btn_select_all.pack(side="left", padx=(0, 8), pady=3)
+        # 横向容器：左列（批量搜索 + 搜索页数）/ 右列（全选 + 书签流）
+        bookmark_body = tk.Frame(bk, bg=self.COLOR_CARD)
+        bookmark_body.pack(fill="x", padx=12, pady=(6, 6))
 
-        self.btn_batch = self._make_btn(self.bookmark_ctrl, "📚 批量监控",
+        # 左列
+        left_col = tk.Frame(bookmark_body, bg=self.COLOR_CARD)
+        left_col.pack(side="left", anchor="n", padx=(0, 14))
+
+        self.btn_batch = self._make_btn(left_col, "📚 批量搜索",
                                         self.start_batch_monitor,
                                         bg=self.COLOR_INFO, width=12, bold=True)
-        self.btn_batch.pack(side="left", padx=(0, 14), pady=3)
+        self.btn_batch.pack(anchor="w", pady=(0, 4))
 
-        tk.Label(self.bookmark_ctrl, text="间隔(小时)",
+        pages_row = tk.Frame(left_col, bg=self.COLOR_CARD)
+        pages_row.pack(anchor="w")
+        tk.Label(pages_row, text="搜索页数",
                  bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).pack(side="left", padx=(6, 2))
-        self.entry_interval = tk.Entry(self.bookmark_ctrl, width=6, font=self.font_normal,
-                                       bd=1, relief="solid", highlightthickness=0,
-                                       bg="#FAFBFC", fg=self.COLOR_TEXT,
-                                       insertbackground=self.COLOR_TEXT)
-        self.entry_interval.pack(side="left", padx=(0, 6), ipady=3)
-        self.entry_interval.insert(0, "6")
-
-        tk.Label(self.bookmark_ctrl, text="监控页数",
-                 bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).pack(side="left", padx=(6, 2))
-        self.entry_pages = tk.Entry(self.bookmark_ctrl, width=6, font=self.font_normal,
+                 font=self.font_small).pack(side="left", padx=(0, 4))
+        self.entry_pages = tk.Entry(pages_row, width=6, font=self.font_normal,
                                     bd=1, relief="solid", highlightthickness=0,
                                     bg="#FAFBFC", fg=self.COLOR_TEXT,
                                     insertbackground=self.COLOR_TEXT)
-        self.entry_pages.pack(side="left", padx=(0, 6), ipady=3)
-        self.entry_pages.insert(0, "自动")     # ★ 默认：自动翻页（有结果就继续，0 匹配即停）
+        self.entry_pages.pack(side="left", ipady=3)
+        self.entry_pages.insert(0, "自动")
 
-        # ★ 书签区：里面的书签按窗口宽度自动换行（grid 布局，由 _reflow_bookmark_cells 排）
-        self.bookmark_inner = tk.Frame(bk, bg=self.COLOR_CARD)
-        self.bookmark_inner.pack(fill="x", padx=12, pady=(0, 10))
+        # 右列：全选 + 书签流（都在 bookmark_inner 里）
+        right_col = tk.Frame(bookmark_body, bg=self.COLOR_CARD)
+        right_col.pack(side="left", fill="x", expand=True)
+
+        self.bookmark_inner = tk.Frame(right_col, bg=self.COLOR_CARD)
+        self.bookmark_inner.pack(fill="x")
         self._bookmark_cells = []
         self.bookmark_inner.bind("<Configure>", lambda e: self._reflow_bookmark_cells())
 
@@ -845,16 +833,6 @@ class MonitorApp:
     def _is_all_tree(tree):
         return len(tree["columns"]) == 7
 
-    def _tree_source_filter(self, tree):
-        if tree is self.tree_all:
-            return None
-        if self.tree_ai is not None and tree is self.tree_ai:
-            return 'baidu_zhinengti'
-        for tab_key, tab_info in self.engine_tabs.items():
-            if tree is tab_info["tree"]:
-                return tab_key
-        return None
-
     def get_row_urls(self, tree, item):
         """item 是 tree 里的 iid，即复合 key（来源|url）"""
         row = self._rows.get(item)
@@ -1060,13 +1038,32 @@ class MonitorApp:
             self.default_suffixes, on_ok)
 
     # ==================== 书签 ====================
+    def _update_select_all_state(self):
+        """根据所有书签的勾选状态，刷新三态全选框"""
+        if not hasattr(self, "bookmark_select_all_var"):
+            return
+        values = [v.get() for v in self.bookmark_checks.values()]
+        if not values:
+            state = 0
+        elif all(values):
+            state = 1
+        elif any(values):
+            state = 2   # 半选
+        else:
+            state = 0
+        try:
+            self.bookmark_select_all_var.set(state)
+        except Exception:
+            pass
+
     def _bookmark_var(self, book_id):
-        """书签前面那个小方格（勾上的才会被「📚 批量监控」带上）"""
+        """书签前面那个小方格（勾上的才会被「📚 批量搜索」带上）"""
         if not hasattr(self, "bookmark_checks"):
             self.bookmark_checks = {}
         var = self.bookmark_checks.get(book_id)
         if var is None:
-            var = tk.BooleanVar(value=True)
+            var = tk.BooleanVar(value=False)
+            var.trace_add("write", lambda *a: self._update_select_all_state())
             self.bookmark_checks[book_id] = var
         return var
 
@@ -1157,6 +1154,187 @@ class MonitorApp:
             except Exception:
                 pass
 
+    def _reposition_suffix_popup(self):
+        popup = getattr(self, "_suffix_popup", None)
+        owner_bid = getattr(self, "_suffix_popup_owner_bid", None)
+        if not popup or not owner_bid:
+            return
+        try:
+            if not popup.winfo_exists():
+                return
+        except Exception:
+            return
+        target_cell = None
+        for i, bm in enumerate(self.bookmarks):
+            if bm.get("id") == owner_bid and i < len(self._bookmark_cells):
+                target_cell = self._bookmark_cells[i]
+                break
+        if not target_cell:
+            return
+        try:
+            target_cell.update_idletasks()
+            x = target_cell.winfo_rootx() - self.root.winfo_rootx()
+            y = target_cell.winfo_rooty() - self.root.winfo_rooty() + target_cell.winfo_height() + 2
+            popup.place(x=x, y=y)
+            popup.lift()
+        except Exception:
+            pass
+
+    def _open_suffix_popup(self, book_id, anchor_cell):
+        # 关掉已有浮层
+        if getattr(self, "_suffix_popup", None):
+            try:
+                self._suffix_popup.destroy()
+            except Exception:
+                pass
+            self._suffix_popup = None
+
+        # ★ 解绑旧的 root 监听（否则会累积，导致关不掉）
+        try:
+            _old_bid = getattr(self, "_suffix_popup_close_bind", None)
+            if _old_bid:
+                self.root.unbind("<Button-1>", _old_bid)
+        except Exception:
+            pass
+        try:
+            _old_bid = getattr(self, "_suffix_popup_esc_bind", None)
+            if _old_bid:
+                self.root.unbind("<Escape>", _old_bid)
+        except Exception:
+            pass
+        self._suffix_popup_close_bind = None
+        self._suffix_popup_esc_bind = None
+
+        self._suffix_popup_owner_bid = book_id
+
+        bm = next((b for b in self.bookmarks if b.get("id") == book_id), None)
+        if not bm:
+            return
+
+        popup = tk.Frame(self.root, bg="#FFFFFF",
+                         relief="solid", bd=1, highlightthickness=0)
+        self._suffix_popup = popup
+
+        tk.Label(popup, text=f"「{bm['name']}」的搜索词",
+                 bg="#FFFFFF", fg="#2F3542",
+                 font=("Microsoft YaHei", 9, "bold")).pack(anchor="w", padx=8, pady=(6, 4))
+
+        list_frame = tk.Frame(popup, bg="#FFFFFF")
+        list_frame.pack(fill="x", padx=8, pady=(0, 4))
+
+        def _render():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            for i, s in enumerate(bm["suffixes"]):
+                row = tk.Frame(list_frame, bg="#FFFFFF")
+                row.pack(fill="x", pady=1)
+                var = tk.BooleanVar(value=bool(s.get("enabled", True)))
+
+                def _toggle(idx=i, v=var):
+                    bm["suffixes"][idx]["enabled"] = bool(v.get())
+                    self.save_bookmarks()
+
+                tk.Checkbutton(row, variable=var, command=_toggle,
+                               bg="#FFFFFF", activebackground="#FFFFFF",
+                               bd=0, highlightthickness=0).pack(side="left")
+                label = s.get("text", "") or "（无后缀）"
+                tk.Label(row, text=label, bg="#FFFFFF", fg="#2F3542",
+                         font=("Microsoft YaHei", 9)).pack(side="left", padx=(2, 8))
+
+                x_btn = tk.Label(row, text="✕", bg="#FFFFFF", fg="#E63946",
+                                 font=("Microsoft YaHei", 9, "bold"), cursor="hand2")
+                x_btn.pack(side="right", padx=(4, 2))
+
+                def _delete(e=None, idx=i):
+                    bm["suffixes"].pop(idx)
+                    self.save_bookmarks()
+                    self.refresh_bookmarks()
+                    _render()
+                x_btn.bind("<Button-1>", _delete)
+
+        _render()
+
+        add_row = tk.Frame(popup, bg="#FFFFFF")
+        add_row.pack(fill="x", padx=8, pady=(2, 6))
+        entry = tk.Entry(add_row, font=("Microsoft YaHei", 9),
+                         bd=1, relief="solid", highlightthickness=0)
+        entry.pack(side="left", fill="x", expand=True, ipady=2)
+
+        def _add(e=None):
+            t = entry.get().strip()
+            if not t:
+                return
+            bm["suffixes"].append({"text": t, "enabled": True})
+            self.save_bookmarks()
+            self.refresh_bookmarks()
+            entry.delete(0, "end")
+            _render()
+        entry.bind("<Return>", _add)
+
+        tk.Button(add_row, text="＋ 添加", command=_add,
+                  bg="#5DADE2", fg="#FFFFFF", relief="flat",
+                  font=("Microsoft YaHei", 9), padx=6).pack(side="left", padx=(4, 0))
+
+        # 定位到书签下方
+        anchor_cell.update_idletasks()
+        x = anchor_cell.winfo_rootx() - self.root.winfo_rootx()
+        y = anchor_cell.winfo_rooty() - self.root.winfo_rooty() + anchor_cell.winfo_height() + 2
+        popup.place(x=x, y=y)
+        popup.lift()
+
+        # 点别处 / Esc 关闭
+        def _do_close():
+            try:
+                popup.destroy()
+            except Exception:
+                pass
+            self._suffix_popup = None
+            self._suffix_popup_owner_bid = None
+            try:
+                bid = getattr(self, "_suffix_popup_close_bind", None)
+                if bid:
+                    self.root.unbind("<Button-1>", bid)
+            except Exception:
+                pass
+            try:
+                bid = getattr(self, "_suffix_popup_esc_bind", None)
+                if bid:
+                    self.root.unbind("<Escape>", bid)
+            except Exception:
+                pass
+            self._suffix_popup_close_bind = None
+            self._suffix_popup_esc_bind = None
+
+        def _close_by_click(e):
+            # ★ 判断点击位置是否在浮层内部，在的话不关闭
+            try:
+                w = self.root.winfo_containing(e.x_root, e.y_root)
+                p = w
+                while p is not None:
+                    if p == popup:
+                        return
+                    p = getattr(p, "master", None)
+            except Exception:
+                pass
+            _do_close()
+
+        def _close_by_esc(e=None):
+            _do_close()
+
+        # ★ 延迟绑定：让当前这次"点 ✏"的事件先冒泡完，再挂关闭监听
+        def _bind_close():
+            if not getattr(self, "_suffix_popup", None):
+                return
+            try:
+                self._suffix_popup_close_bind = self.root.bind(
+                    "<Button-1>", _close_by_click, add="+")
+                self._suffix_popup_esc_bind = self.root.bind(
+                    "<Escape>", _close_by_esc, add="+")
+            except Exception:
+                pass
+        self.root.after(150, _bind_close)
+        entry.focus_set()
+
     def refresh_bookmarks(self):
         for w in self.bookmark_buttons:
             try:
@@ -1165,6 +1343,20 @@ class MonitorApp:
                 pass
         self.bookmark_buttons = []
         self._bookmark_cells = []
+
+        # ★ 全选 cell（第一个）
+        all_cell = tk.Frame(self.bookmark_inner, bg=self.COLOR_CARD)
+        self.btn_select_all = tk.Checkbutton(all_cell, text="全选",
+                                             variable=self.bookmark_select_all_var,
+                                             onvalue=1, offvalue=0, tristatevalue=2,
+                                             command=self.toggle_all_bookmarks,
+                                             bg=self.COLOR_CARD, activebackground=self.COLOR_CARD,
+                                             fg="#0D47A1", font=("Microsoft YaHei", 9),
+                                             bd=0, highlightthickness=0, cursor="hand2",
+                                             takefocus=0)
+        self.btn_select_all.pack(side="left", padx=(0, 8))
+        self.bookmark_buttons.append(all_cell)
+        self._bookmark_cells.append(all_cell)
         try:
             self._flow_cache.pop("bookmarks", None)
         except Exception:
@@ -1185,6 +1377,8 @@ class MonitorApp:
             self._bookmark_cells.append(lbl)
             self._reflow_bookmark_cells()
             self._schedule_reflow(self.bookmark_inner, self._reflow_bookmark_cells)
+            # ★ 浮层跟随：若后缀浮层开着，重排后重新定位到 owner 书签下方
+            self.root.after(20, self._reposition_suffix_popup)
             return
 
         for bm in self.bookmarks:
@@ -1210,15 +1404,22 @@ class MonitorApp:
             chk.pack(side="left", padx=(0, 1))
 
             btn = tk.Button(cell, text=text,
-                            font=("Microsoft YaHei", 9),
-                            bg="#E0F2F1" if n else "#FFEBEE",
+                            font=("Microsoft YaHei", 10, "bold"),
+                            bg=self.COLOR_CARD,
                             fg="#00695C" if n else "#B71C1C",
-                            activebackground="#B2DFDB" if n else "#FFCDD2",
+                            activebackground="#F5F7FA",
                             activeforeground="#004D40" if n else "#B71C1C",
                             relief="flat", bd=0, cursor="hand2",
-                            padx=10, pady=5, highlightthickness=0,
+                            padx=4, pady=2, highlightthickness=0,
                             command=lambda bid=book_id: self.load_bookmark(bid))
             btn.pack(side="left")
+
+            edit_btn = tk.Label(cell, text="✏", bg=self.COLOR_CARD,
+                                fg="#5DADE2", font=("Microsoft YaHei", 9),
+                                cursor="hand2")
+            edit_btn.pack(side="left", padx=(3, 0))
+            edit_btn.bind("<Button-1>",
+                          lambda e, bid=book_id, c=cell: self._open_suffix_popup(bid, c))
             btn.bind("<Double-Button-1>", lambda e, bid=book_id: self.start_bookmark_monitor(bid))
             btn.bind("<Button-3>", lambda e, bid=book_id: self.bookmark_menu(e, bid))
             self.bookmark_buttons.append(cell)
@@ -1227,16 +1428,13 @@ class MonitorApp:
         self._reflow_bookmark_cells()
         # ★ 刚加完书签时控件宽度可能还没算准，稍后再排两次，保证马上就分成多行
         self._schedule_reflow(self.bookmark_inner, self._reflow_bookmark_cells)
+        # ★ 浮层跟随：若后缀浮层开着，重排后重新定位到 owner 书签下方
+        self.root.after(20, self._reposition_suffix_popup)
 
     def bookmark_menu(self, event, book_id):
         m = tk.Menu(self.root, tearoff=0)
         m.add_command(label="监控此书签",
                       command=lambda: self.start_bookmark_monitor(book_id))
-        m.add_separator()
-        m.add_command(label="编辑搜索词…",
-                      command=lambda: self.edit_suffixes_by_id(book_id))
-        m.add_command(label="书名加为搜索词",
-                      command=lambda: self.add_suffix_from_entry_by_id(book_id))
         m.add_separator()
         m.add_command(label="删除书签",
                       command=lambda: self.delete_bookmark_by_id(book_id))
@@ -1267,12 +1465,17 @@ class MonitorApp:
         if not name:
             messagebox.showinfo("提示", "请先在输入框里输入书名！")
             return
-        sufs = [dict(s) for s in self.default_suffixes]
+        sufs = [
+            {"text": "", "enabled": True},
+            {"text": "链接", "enabled": True},
+            {"text": "网盘", "enabled": True},
+            {"text": "免费", "enabled": True},
+        ]
         book_id = uuid.uuid4().hex[:8]
         self.bookmarks.append({"id": book_id, "name": name, "suffixes": sufs})
         self.save_bookmarks()
         self.refresh_bookmarks()
-        self.log(f"💾 已保存书签: {name}（搜索词：{fmt_suffixes(sufs)}）")
+        self.log(f"💾 已保存书签: {name}（4 个默认搜索词）")
 
     def load_bookmark(self, book_id):
         bm = self._find_bookmark_by_id(book_id)
@@ -1302,15 +1505,12 @@ class MonitorApp:
             var.set(should_select)
 
     def toggle_all_bookmarks(self):
-        """书签区全选/取消：把书签前面的小方格全部勾上或全部取消"""
+        """书签区三态全选：勾选 → 全选；取消 → 全不选"""
         if not hasattr(self, "bookmark_checks") or not self.bookmark_checks:
             return
-        values = list(self.bookmark_checks.values())
-        if not values:
-            return
-        should_select = not all(var.get() for var in values)
-        for var in values:
-            var.set(should_select)
+        want = (self.bookmark_select_all_var.get() == 1)
+        for var in self.bookmark_checks.values():
+            var.set(want)
 
     def clear_cookies_now(self):
         if self.is_monitoring:
@@ -1357,10 +1557,6 @@ class MonitorApp:
             items.append(item)
         if items:
             tree.selection_add(items)
-
-    def clear_selection(self):
-        tree = self.current_tree()
-        tree.selection_remove(tree.selection())
 
     def toggle_current_selection(self):
         tree = self.current_tree()
@@ -2436,8 +2632,7 @@ class MonitorApp:
         if not kw:
             messagebox.showwarning("提示", "请输入书名或点击下方书签！")
             return
-        bookmarks = [{"name": kw,
-                      "suffixes": [dict(s) for s in self.default_suffixes]}]
+        bookmarks = [{"name": kw, "suffixes": [{"text": "", "enabled": True}]}]
         self._start_monitor_with(bookmarks, once=True)
 
     def start_bookmark_monitor(self, book_id):
@@ -2449,7 +2644,7 @@ class MonitorApp:
             return
         bookmarks = [{"name": bm["name"],
                       "suffixes": [dict(s) for s in bm["suffixes"]]}]
-        self._start_monitor_with(bookmarks, once=False)
+        self._start_monitor_with(bookmarks, once=True)
 
     def start_batch_monitor(self):
         if self.is_monitoring:
@@ -2519,16 +2714,10 @@ class MonitorApp:
         self._start_monitor_with(
             [{"name": b["name"], "suffixes": [dict(s) for s in b["suffixes"]]}
              for b in picked],
-            once=False)
+            once=True)
 
     def _start_monitor_with(self, bookmarks, once=False):
-        try:
-            hours = float(self.entry_interval.get())
-            if hours <= 0:
-                raise ValueError
-        except Exception:
-            messagebox.showwarning("提示", "间隔请填写大于 0 的小时数。")
-            return
+        hours = 0   # 间隔已废弃：本工具改为一次性搜索，不再周期监控
 
         pages_raw = str(self.entry_pages.get()).strip()
         if pages_raw in ("", "自动", "auto", "Auto", "AUTO", "0"):
@@ -2539,13 +2728,13 @@ class MonitorApp:
                 if pages_per_term < 1:
                     raise ValueError
             except Exception:
-                messagebox.showwarning("提示", "监控页数请填「自动」，或大于等于 1 的整数。")
+                messagebox.showwarning("提示", "搜索页数请填「自动」，或大于等于 1 的整数。")
                 return
 
         self.deep_mode = bool(self.var_deep.get())
         enabled = self._collect_enabled_sources()
         if not enabled:
-            messagebox.showwarning("提示", "请至少勾选一个监控来源！")
+            messagebox.showwarning("提示", "请至少勾选一个搜索来源！")
             return
 
         tasks = self._build_tasks(bookmarks)
@@ -2580,13 +2769,13 @@ class MonitorApp:
             except Exception:
                 pass
 
-        mode = "巡逻一次" if once else "开始监控"
+        mode = "搜索本书" if once else "批量搜索"
         pages_desc = ("自动翻页（有结果就继续翻，0 匹配即停）" if pages_per_term <= 0
                       else f"每词 {pages_per_term} 页")
         self.log(f"====== [{mode}] {len(bookmarks)} 个书名"
                  f"（{len(tasks)} 个搜索词 × {len(enabled)} 来源 = {total_terms} 次查询，"
                  f"{pages_desc}"
-                 + ("" if once else f"，间隔 {hours} 小时") + "） ======")
+                 + "） ======")
         for b in bookmarks:
             self.log(f"   📖 {b['name']} → {self._enabled_suffixes_display(b.get('suffixes'))}")
 
@@ -2600,7 +2789,6 @@ class MonitorApp:
             return
         self._stop_done = True
         self.is_monitoring = False
-        self.waiting_for_user = False
 
         # 停止时：汇报本次运行全程的验证码/登录情况
         self._report_captcha_session()
@@ -2652,7 +2840,6 @@ class MonitorApp:
 
     def resume_from_user(self):
         """（弹窗版）直接继续，不再检查按钮状态"""
-        self.waiting_for_user = False
         self.log("✅ 用户已处理，继续监控")
         self.root.after(0, lambda: self.status_var.set("正在抓取..."))
 
@@ -2677,7 +2864,6 @@ class MonitorApp:
         if not self.captcha_warned:
             self.captcha_warned = True
             self.log_alert("⚠️ 前台模式：浏览器里出现验证码时，请在页面上完成验证。")
-        self.waiting_for_user = True
         self.log(f"⏸️ 暂停，等待用户处理：{reason}（浏览器页面已保留）")
         self.root.after(0, lambda: self.status_var.set(
             "⚠️ 请在浏览器处理验证码/登录，完成后点击「确定」"))
@@ -3090,30 +3276,9 @@ class MonitorApp:
                     if not self.is_monitoring:
                         break
 
-                    next_time = datetime.now().timestamp() + interval_hours * 3600
-                    next_str = datetime.fromtimestamp(next_time).strftime('%m-%d %H:%M')
-                    self.root.after(0, lambda ns=next_str: self.status_var.set(
-                        f"下一次自动搜索：{ns}（点⚡可立即搜）"))
-                    self.log(f"💤 休眠 {interval_hours} 小时，下次：{next_str}")
-
-                    wait_total = int(interval_hours * 3600)
-                    waited = 0
-                    while waited < wait_total:
-                        if not self.is_monitoring:
-                            break
-                        if self.trigger_now:
-                            self.trigger_now = False
-                            self.log("⚡ 收到立即搜索指令")
-                            break
-                        time.sleep(1)
-                        waited += 1
-
-                    if not self.is_monitoring:
-                        break
-
                 # ★ 优雅关闭：先关所有 page，等它消化，再关 context
                 try:
-                    # 1. 主动关掉所有 page（让浏览器知道"该退了"）
+                    # 1. 主动关掉所有 page（让浏览器知道"该撤了"）
                     try:
                         for _pg in baidu_context.pages:
                             try:
