@@ -346,7 +346,7 @@ class MonitorApp:
         full = f"[{ts}] {msg}"
         def _do():
             try:
-                self.log_text.tag_config("alert", background="#B71C1C", foreground="#FFFFFF")
+                self.log_text.tag_config("alert", background="#000000", foreground="#FFFFFF")
                 self.log_text.config(state='normal')
                 self.log_text.insert(tk.END, full + "\n", "alert")
                 self.log_text.see(tk.END)
@@ -682,8 +682,8 @@ class MonitorApp:
 
         self.log_text = scrolledtext.ScrolledText(
             log_card, height=6, state='disabled',
-            bg="#1E272E", fg="#E8F0F2",
-            insertbackground="#E8F0F2",
+            bg="#FFFFFF", fg="#2F3542",
+            insertbackground="#2F3542",
             font=("Cascadia Mono", 9), bd=0, relief="flat",
             padx=10, pady=6)
         self.log_text.pack(fill="both", expand=True, padx=12, pady=(0, 10))
