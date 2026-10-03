@@ -30,14 +30,27 @@ except ImportError:
     HAS_WINOTIFY = False
 
 from playwright.sync_api import sync_playwright
+import customtkinter as ctk
+ctk.set_widget_scaling(1.0)
+ctk.set_window_scaling(1.0)
+
+# ★ 高 DPI 感知：让 Windows 按真实像素渲染，避免高分屏下字小、模糊
+try:
+    import ctypes
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)
+except Exception:
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
 
 class MonitorApp:
-    COLOR_BG           = "#F2F5F7"
+    COLOR_BG           = "#F7F8FA"
     COLOR_CARD         = "#FFFFFF"
-    COLOR_BORDER       = "#E1E5EA"
+    COLOR_BORDER       = "#E8EBEE"
     COLOR_PRIMARY      = "#2A9D8F"
-    COLOR_TEXT         = "#2F3542"
-    COLOR_MUTED        = "#7A869A"
+    COLOR_TEXT         = "#1F2937"
+    COLOR_MUTED        = "#6B7280"
     COLOR_DANGER       = "#E63946"
     COLOR_WARNING      = "#F4A261"
     COLOR_INFO         = "#457B9D"
@@ -161,9 +174,9 @@ class MonitorApp:
         self.bookmark_checks = {}      # 书签前面的小方格：勾上的才批量监控
         self.bookmark_select_all_var = tk.IntVar(value=0)   # 0=未选，1=全选，2=半选
 
-        self.font_normal = ("Microsoft YaHei", 10)
-        self.font_title = ("Microsoft YaHei", 11, "bold")
-        self.font_small = ("Microsoft YaHei", 9)
+        self.font_normal = ("Microsoft YaHei", 11)
+        self.font_title  = ("Microsoft YaHei", 13, "bold")
+        self.font_small  = ("Microsoft YaHei", 10)
         self.root.option_add("*Font", self.font_normal)
 
         self._init_style()
@@ -174,6 +187,10 @@ class MonitorApp:
     # ==================== 主题 ====================
     def _init_style(self):
         style = ttk.Style()
+        _sty = ttk.Style()
+        _sty.configure("TNotebook.Tab", font=("Microsoft YaHei", 10))
+        _sty.configure("Treeview", font=("Microsoft YaHei", 10))
+        _sty.configure("Treeview.Heading", font=("Microsoft YaHei", 10, "bold"))
         try:
             style.theme_use('clam')
         except Exception:
@@ -215,28 +232,47 @@ class MonitorApp:
                         arrowcolor=self.COLOR_MUTED)
 
     # ==================== 组件工厂 ====================
+    def _hover_color_for(self, color):
+        """根据底色自动生成 hover 色（浅色压暗、深色再深一点）"""
+        try:
+            c = color.lstrip('#')
+            r, g, b = int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16)
+            lum = r * 0.299 + g * 0.587 + b * 0.114
+            delta = 25 if lum > 180 else 20
+            r, g, b = max(0, r - delta), max(0, g - delta), max(0, b - delta)
+            return f"#{r:02X}{g:02X}{b:02X}"
+        except Exception:
+            return color
+
     def _make_btn(self, parent, text, command, bg=None, fg="white",
                   width=10, bold=False, small=False, height=1):
         if bg is None:
             bg, fg = self.COLOR_GHOST, self.COLOR_GHOST_FG
-        font = ("Microsoft YaHei", 9 if small else 10, "bold" if bold else "normal")
-        return tk.Button(
+        font = ctk.CTkFont(
+            family="Microsoft YaHei",
+            size=12 if small else 13,
+            weight="bold" if bold else "normal"
+        )
+        if width is None:
+            px_width = 0   # CTk 里 width=0 表示按内容自适应
+        else:
+            px_width = int(width * 7) + 16
+        px_height = 32 if small else 38
+        hover = self._hover_color_for(bg)
+        return ctk.CTkButton(
             parent, text=text, command=command,
-            bg=bg, fg=fg,
-            activebackground=bg, activeforeground=fg,
-            relief="flat", bd=0, cursor="hand2",
-            width=width, height=height,
-            font=font, padx=8, pady=5,
-            highlightthickness=0,
+            fg_color=bg, hover_color=hover, text_color=fg,
+            width=px_width, height=px_height,
+            corner_radius=8, font=font,
         )
 
     def _card(self, parent, title=None):
-        outer = tk.Frame(parent, bg=self.COLOR_BORDER)
-        inner = tk.Frame(outer, bg=self.COLOR_CARD)
+        outer = ctk.CTkFrame(parent, fg_color=self.COLOR_BORDER, corner_radius=8)
+        inner = ctk.CTkFrame(outer, fg_color=self.COLOR_CARD, corner_radius=7)
         inner.pack(fill="both", expand=True, padx=1, pady=1)
         if title:
-            tk.Label(inner, text=title, bg=self.COLOR_CARD, fg=self.COLOR_TEXT,
-                     font=self.font_title, anchor="w").pack(
+            ctk.CTkLabel(inner, text=title, text_color=self.COLOR_TEXT,
+                         font=self.font_title, anchor="w").pack(
                 fill="x", padx=14, pady=(10, 4))
         return outer, inner
 
@@ -401,11 +437,12 @@ class MonitorApp:
         card_outer.pack(fill="x", padx=12, pady=(12, 6))
 
         # ★ 从左到右：监控设置，前台模式按钮，前台模式说明，深度模式按钮，深度模式说明
-        header = tk.Frame(top, bg=self.COLOR_CARD)
+        header = ctk.CTkFrame(top, fg_color=self.COLOR_CARD, corner_radius=0)
         header.grid(row=0, column=0, columnspan=12, sticky="ew", padx=14, pady=(10, 6))
 
-        tk.Label(header, text="监控设置", bg=self.COLOR_CARD, fg=self.COLOR_TEXT,
-                 font=self.font_title, anchor="w").pack(side="left")
+        ctk.CTkLabel(header, text="搜索设置",
+                     text_color=self.COLOR_TEXT,
+                     font=self.font_title, anchor="w").pack(side="left")
 
         # 前台模式按钮
         self.var_headless = tk.BooleanVar(value=not self.headless)
@@ -420,9 +457,10 @@ class MonitorApp:
         self.chk_headless.pack(side="left", anchor="w", padx=(14, 4))
 
         # 前台模式说明
-        self.tip_label = tk.Label(header, anchor="w", font=self.font_small,
-                                  bg="#FFF8E1", fg="#6D4C41",
-                                  padx=8, pady=2)
+        self.tip_label = ctk.CTkLabel(header, text="", anchor="w",
+                                      font=("Microsoft YaHei", 11),
+                                      text_color=self.COLOR_MUTED,
+                                      padx=8, pady=2)
         self.tip_label.pack(side="left", anchor="w")
         self._refresh_headless_tip()                        # ← 立刻显示初始文字
 
@@ -439,9 +477,10 @@ class MonitorApp:
         self.chk_deep.pack(side="left", anchor="w", padx=(14, 4))
 
         # 深度模式说明
-        self.deep_tip_label = tk.Label(header, anchor="w", font=self.font_small,
-                                       bg="#E3F2FD", fg="#0D47A1",
-                                       padx=8, pady=2)
+        self.deep_tip_label = ctk.CTkLabel(header, text="", anchor="w",
+                                           font=("Microsoft YaHei", 11),
+                                           text_color=self.COLOR_MUTED,
+                                           padx=8, pady=2)
         self.deep_tip_label.pack(side="left", anchor="w")
         self._refresh_deep_tip()                            # ← 立刻显示初始文字
 
@@ -450,43 +489,45 @@ class MonitorApp:
         #   的容器横向铺满，但不影响第 1 行按钮的位置
         top.columnconfigure(12, weight=1)
 
-        tk.Label(top, text="书名", bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).grid(row=r, column=0, padx=(14, 4), pady=4, sticky="e")
-        self.entry_keyword = tk.Entry(top, width=20, font=self.font_normal,
-                                      bd=1, relief="solid", highlightthickness=0,
-                                      bg="#FAFBFC", fg=self.COLOR_TEXT,
-                                      insertbackground=self.COLOR_TEXT)
+        ctk.CTkLabel(top, text="书名",
+                     text_color=self.COLOR_MUTED,
+                     font=("Microsoft YaHei", 11)).grid(row=r, column=0, padx=(14, 4), pady=4, sticky="e")
+        self.entry_keyword = ctk.CTkEntry(top, width=156, height=32,
+                                          font=self.font_normal, fg_color="#FAFBFC",
+                                          text_color=self.COLOR_TEXT, border_width=1,
+                                          border_color=self.COLOR_BORDER)
         self.entry_keyword.grid(row=r, column=1, padx=4, pady=4, ipady=5)
 
         self._make_btn(top, "💾 保存为书签", self.add_bookmark,
-                       bg="#FFF3C4", fg="#8D6E00", width=12).grid(row=r, column=4, padx=(14, 4))
+                       bg="#E8F5F3", fg="#6B5200", width=8, bold=True).grid(row=r, column=4, padx=(14, 4))
 
         self.btn_patrol = self._make_btn(top, "🔍 搜索本书", self.start_monitor_once,
-                                         bg="#FFE0B2", fg="#9E5A00", width=12, bold=True)
+                                         bg="#2A9D8F", fg="#FFFFFF", width=8, bold=True)
         self.btn_patrol.grid(row=r, column=3, padx=4)
 
         self.btn_stop = self._make_btn(top, "⛔ 停止", self.stop_monitor,
-                                       bg="#FFCDD2", fg="#B71C1C", width=8, bold=True)
-        self.btn_stop.config(state="disabled", bg="#ECEFF1", activebackground="#ECEFF1", fg="#9AA5B1")
+                                       bg="#E63946", fg="white", width=8, bold=True)
+        self.btn_stop.configure(state="disabled", fg_color="#ECEFF1", hover_color="#ECEFF1", text_color="#9AA5B1")
         self.btn_stop.grid(row=r, column=5, padx=4)
 
         self.btn_clear_cookies = self._make_btn(top, "🧼 清cookies", self.clear_cookies_now,
-                                                bg="#FDE2E2", fg="#B71C1C",
-                                                width=9, bold=True, small=True)
+                                                bg="#E8F5F3", fg="#2A9D8F",
+                                                width=8, bold=True)
         self.btn_clear_cookies.grid(row=r, column=6, padx=4)
 
         self.btn_manual_search = self._make_btn(top, "🧭 手动搜索", self.open_manual_search_dialog,
-                                               bg="#E1BEE7", fg="#6A1B9A", width=11, bold=True)
+                                               bg="#2A9D8F", fg="white", width=8, bold=True)
         self.btn_manual_search.grid(row=r, column=7, padx=4)
 
         r = 3
         # ★ 整行一个容器：右边两个按钮先 pack（先占位置），窗口拖窄时也不会被挤出窗口；
         #   左边的来源勾选框放在会自动换行的框里，窄了自动排到第二行
-        src_row = tk.Frame(top, bg=self.COLOR_CARD)
+        src_row = ctk.CTkFrame(top, fg_color=self.COLOR_CARD, corner_radius=0)
         src_row.grid(row=r, column=0, columnspan=13, sticky="we", padx=(14, 12), pady=(4, 6))
 
-        tk.Label(src_row, text="搜索来源", bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).pack(side="left", padx=(0, 6))
+        ctk.CTkLabel(src_row, text="搜索来源",
+                     text_color=self.COLOR_MUTED,
+                     font=("Microsoft YaHei", 11)).pack(side="left", padx=(0, 6))
 
         self.btn_source_toggle = tk.Checkbutton(src_row, text="全选",
                                                 command=self.toggle_all_source_checks,
@@ -495,7 +536,7 @@ class MonitorApp:
                                                 bd=0, highlightthickness=0, cursor="hand2")
         self.btn_source_toggle.pack(side="left", padx=(0, 8), pady=3)
 
-        src_frame = tk.Frame(src_row, bg=self.COLOR_CARD)
+        src_frame = ctk.CTkFrame(src_row, fg_color=self.COLOR_CARD, corner_radius=0)
         src_frame.pack(side="left", fill="x", expand=True)
         self.src_flow = src_frame
 
@@ -536,18 +577,18 @@ class MonitorApp:
 
         self.btn_batch = self._make_btn(left_col, "📚 批量搜索",
                                         self.start_batch_monitor,
-                                        bg=self.COLOR_INFO, width=12, bold=True)
+                                        bg="#2A9D8F", fg="white", width=12, bold=True)
         self.btn_batch.pack(anchor="w", pady=(0, 4))
 
         pages_row = tk.Frame(left_col, bg=self.COLOR_CARD)
         pages_row.pack(anchor="w")
         tk.Label(pages_row, text="搜索页数",
                  bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).pack(side="left", padx=(0, 4))
-        self.entry_pages = tk.Entry(pages_row, width=6, font=self.font_normal,
-                                    bd=1, relief="solid", highlightthickness=0,
-                                    bg="#FAFBFC", fg=self.COLOR_TEXT,
-                                    insertbackground=self.COLOR_TEXT)
+                 font=("Microsoft YaHei", 9)).pack(side="left", padx=(0, 4))
+        self.entry_pages = ctk.CTkEntry(pages_row, width=60, height=32,
+                                        font=("Microsoft YaHei", 10), fg_color="#FAFBFC",
+                                        text_color=self.COLOR_TEXT, border_width=1,
+                                        border_color=self.COLOR_BORDER)
         self.entry_pages.pack(side="left", ipady=3)
         self.entry_pages.insert(0, "自动")
 
@@ -561,37 +602,38 @@ class MonitorApp:
         self.bookmark_inner.bind("<Configure>", lambda e: self._reflow_bookmark_cells())
 
         # ---------- 工具栏 ----------
-        tool = tk.Frame(self.root, bg=self.COLOR_BG)
+        tool = ctk.CTkFrame(self.root, fg_color=self.COLOR_BG, corner_radius=0)
         tool.pack(fill="x", padx=12, pady=(0, 6))
 
         tool_items = [
-            ("✅ 全选/取消", None, self.toggle_current_selection, 9),
-            ("🌐 批量打开", self.COLOR_INFO, self.open_selected_src, 9),
-            ("📋 批量复制", "#FB8C00", self.copy_selected_src, 9),
-            ("🛡 加白名单", "#8E24AA", self.add_selected_to_whitelist, 9),
-            ("🏷 白名单词", "#6A1B9A", self.open_whitelist_words_dialog, None),
-            ("🗑 清空", "#546E7A", self.clear_current_tab, 9),
+            # (文字, 底色, 字色, 回调, 宽度)
+            ("✅ 全选/取消",   "#E8F5F3", "#1F6B60", self.toggle_current_selection, 9),
+            ("🌐 批量打开",   "#E8F5F3", "#1F6B60", self.open_selected_src, 9),
+            ("📋 批量复制",   "#E8F5F3", "#1F6B60", self.copy_selected_src, 9),
+            ("🛡 加白名单",   "#2A9D8F", "white",   self.add_selected_to_whitelist, 9),
+            ("🏷 白名单词",   "#2A9D8F", "white",   self.open_whitelist_words_dialog, None),
+            ("🗑 清空",       "#ECEFF1", "#455A64", self.clear_current_tab, 9),
             # ★ 托盘按钮和清空按钮中间：把「未加白链接」记录里的历史链接导入结果列表
             #   width=None → 按钮按文字自己撑开，文字不会被截断（中文/emoji 都够宽）
-            ("📥 载入历史数据", "#00897B", self.load_unwhite_history, None),
-            ("📤 托盘", "#607D8B", self.hide_to_tray, 9),
+            ("📥 载入历史数据", "#E8F5F3", "#1F6B60", self.load_unwhite_history, None),
+            ("📤 托盘",       "#E8F5F3", "#1F6B60", self.hide_to_tray, 9),
         ]
-        for text, bg, cmd, w in tool_items:
-            self._make_btn(tool, text, cmd, bg=bg, width=w, small=True).pack(
+        for text, bg, fg, cmd, w in tool_items:
+            self._make_btn(tool, text, cmd, bg=bg, fg=fg, width=w, small=True).pack(
                 side="left", padx=(0, 6))
 
-        self.filter_frame = tk.Frame(tool, bg=self.COLOR_BG)
+        self.filter_frame = ctk.CTkFrame(tool, fg_color=self.COLOR_BG, corner_radius=0)
         self.filter_frame.pack(side="right", padx=(0, 4))
         tk.Label(self.filter_frame, text="🔍", bg=self.COLOR_BG,
                  fg=self.COLOR_MUTED, font=self.font_small).pack(side="left")
-        self.entry_filter = tk.Entry(self.filter_frame, width=16, font=self.font_small,
-                                     bd=1, relief="solid", highlightthickness=0,
-                                     bg="#FAFBFC", fg=self.COLOR_TEXT,
-                                     insertbackground=self.COLOR_TEXT)
+        self.entry_filter = ctk.CTkEntry(self.filter_frame, width=140, height=32,
+                                         font=self.font_small, fg_color="#FAFBFC",
+                                         text_color=self.COLOR_TEXT, border_width=1,
+                                         border_color=self.COLOR_BORDER)
         self.entry_filter.pack(side="left", padx=(4, 4), ipady=2)
         self.entry_filter.bind("<KeyRelease>", lambda e: self._on_filter_change())
-        self._make_btn(self.filter_frame, "清空", self._clear_filter, bg="#B0BEC5",
-                       fg="#263238", width=5, small=True).pack(side="left")
+        self._make_btn(self.filter_frame, "清空", self._clear_filter, bg="#ECEFF1",
+                       fg="#455A64", width=5, small=True).pack(side="left")
 
         # ---------- 主内容 PanedWindow ----------
         self.main_paned = tk.PanedWindow(self.root, orient="vertical",
@@ -599,14 +641,14 @@ class MonitorApp:
                                          bg=self.COLOR_BG, bd=0)
         self.main_paned.pack(fill="both", expand=True, padx=12, pady=(0, 6))
 
-        top_container = tk.Frame(self.main_paned, bg=self.COLOR_CARD)
+        top_container = ctk.CTkFrame(self.main_paned, fg_color=self.COLOR_CARD, corner_radius=0)
         self.main_paned.add(top_container, stretch="always", minsize=200)
 
         self.notebook = ttk.Notebook(top_container)
         self.notebook.pack(fill="both", expand=True)
 
         # Tab: 全部
-        self.tab_all = tk.Frame(self.notebook, bg=self.COLOR_CARD)
+        self.tab_all = ctk.CTkFrame(self.notebook, fg_color=self.COLOR_CARD, corner_radius=0)
         self.notebook.add(self.tab_all, text="  全部  ")
         self.tree_all = self._make_tree(
             self.tab_all,
@@ -626,7 +668,7 @@ class MonitorApp:
                 continue
 
             label = self._source_display_name(group_key)
-            tab = tk.Frame(self.notebook, bg=self.COLOR_CARD)
+            tab = ctk.CTkFrame(self.notebook, fg_color=self.COLOR_CARD, corner_radius=0)
             self.notebook.add(tab, text=f"  {label}  ")
             tree = self._make_tree(
                 tab,
@@ -640,7 +682,7 @@ class MonitorApp:
         self.tab_ai = None
         self.tree_ai = None
         if self.SHOW_AI_TAB:
-            self.tab_ai = tk.Frame(self.notebook, bg=self.COLOR_CARD)
+            self.tab_ai = ctk.CTkFrame(self.notebook, fg_color=self.COLOR_CARD, corner_radius=0)
             self.notebook.add(self.tab_ai, text="  文心  ")
             self.tree_ai = self._make_tree(
                 self.tab_ai,
@@ -663,10 +705,10 @@ class MonitorApp:
         log_head = tk.Frame(log_card, bg=self.COLOR_CARD)
         log_head.pack(fill="x", padx=12, pady=(8, 4))
         tk.Label(log_head, text="运行日志", bg=self.COLOR_CARD, fg=self.COLOR_TEXT,
-                 font=self.font_title).pack(side="left")
+                 font=("Microsoft YaHei", 11, "bold")).pack(side="left")
         tk.Label(log_head, text="  >>>>>>>>> 四十米大剑捅死盗文 🔪",
                  bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
-                 font=self.font_small).pack(side="left")
+                 font=("Microsoft YaHei", 9)).pack(side="left")
 
         self.log_text = scrolledtext.ScrolledText(
             log_card, height=6, state='disabled',
@@ -713,13 +755,13 @@ class MonitorApp:
     def _refresh_headless_tip(self):
         try:
             if self.var_headless.get():
-                self.tip_label.config(
+                self.tip_label.configure(
                     text="当前：前台模式（可手动过验证码/登录）",
-                    bg="#E8F5E9", fg="#1B5E20")
+                    fg_color="#E8F5E9", text_color="#1B5E20")
             else:
-                self.tip_label.config(
+                self.tip_label.configure(
                     text="当前：后台模式（大量 0 结果时建议切入前台模式）",
-                    bg="#FFF8E1", fg="#6D4C41")
+                    fg_color="#FFF8E1", text_color="#6D4C41")
         except Exception:
             pass
 
@@ -727,13 +769,13 @@ class MonitorApp:
         """深度模式的小说明：位于前台模式说明的右边"""
         try:
             if self.var_deep.get():
-                self.deep_tip_label.config(
+                self.deep_tip_label.configure(
                     text="当前：深度模式（pc+移动双渠道）",
-                    bg="#E3F2FD", fg="#0D47A1")
+                    fg_color="#E3F2FD", text_color="#0D47A1")
             else:
-                self.deep_tip_label.config(
+                self.deep_tip_label.configure(
                     text="当前：常规模式（每个来源只搜一个渠道）",
-                    bg="#ECEFF1", fg="#455A64")
+                    fg_color="#ECEFF1", text_color="#455A64")
         except Exception:
             pass
     @staticmethod
@@ -875,9 +917,9 @@ class MonitorApp:
 
         ctrl = tk.Frame(body, bg=self.COLOR_CARD)
         ctrl.pack(fill="x", padx=14, pady=(12, 6))
-        self._make_btn(ctrl, "✅ 全选", lambda: _select_all(), bg="#DCEDC8", fg="#33691E",
+        self._make_btn(ctrl, "✅ 全选", lambda: _select_all(), bg="#E8F5F3", fg="#2A9D8F",
                        width=8, small=True).pack(side="left", padx=(0, 6))
-        self._make_btn(ctrl, "⬜ 全不选", lambda: _select_none(), bg="#ECEFF1", fg="#455A64",
+        self._make_btn(ctrl, "⬜ 全不选", lambda: _select_none(), bg="#E8F5F3", fg="#2A9D8F",
                        width=8, small=True).pack(side="left")
         tk.Label(ctrl, text="点第一列或按空格切换；『无后缀』可取消勾选，但不可删除",
                  bg=self.COLOR_CARD, fg=self.COLOR_MUTED,
@@ -945,9 +987,9 @@ class MonitorApp:
 
         row = tk.Frame(body, bg=self.COLOR_CARD)
         row.pack(fill="x", padx=14, pady=(0, 6))
-        ent = tk.Entry(row, font=self.font_normal,
-                       bd=1, relief="solid", highlightthickness=0,
-                       bg="#FAFBFC", fg=self.COLOR_TEXT, insertbackground=self.COLOR_TEXT)
+        ent = ctk.CTkEntry(row, font=self.font_normal, height=32,
+                           fg_color="#FAFBFC", text_color=self.COLOR_TEXT,
+                           border_width=1, border_color=self.COLOR_BORDER)
         ent.pack(side="left", fill="x", expand=True, ipady=4)
 
         def add():
@@ -964,7 +1006,7 @@ class MonitorApp:
             refresh_tree()
 
         ent.bind("<Return>", lambda e: add())
-        self._make_btn(row, "➕ 新增", add, bg=self.COLOR_PRIMARY,
+        self._make_btn(row, "➕ 新增", add, bg="#2A9D8F", fg="white",
                        width=8, small=True).pack(side="left", padx=(6, 0))
 
         btns = tk.Frame(body, bg=self.COLOR_CARD)
@@ -993,18 +1035,18 @@ class MonitorApp:
                     exists.add(t)
             refresh_tree()
 
-        self._make_btn(btns, "🗑️ 删除选中", del_sel, bg="#EF5350", width=11, small=True).pack(side="left")
+        self._make_btn(btns, "🗑️ 删除选中", del_sel, bg="#E63946", fg="white", width=11, small=True).pack(side="left")
         self._make_btn(btns, "📥 导入默认搜索词", import_default,
-                       bg="#7E57C2", width=16, small=True).pack(side="left", padx=8)
+                       bg="#E8F5F3", fg="#2A9D8F", width=16, small=True).pack(side="left", padx=8)
 
         def ok():
             result = [dict(s) for s in suffixes]
             on_ok(result)
             win.destroy()
 
-        self._make_btn(btns, "取 消", win.destroy, bg="#B0BEC5",
-                       fg="#263238", width=8, small=True).pack(side="right")
-        self._make_btn(btns, "✅ 确 定", ok, bg=self.COLOR_PRIMARY,
+        self._make_btn(btns, "取 消", win.destroy, bg="#ECEFF1",
+                       fg="#455A64", width=8, small=True).pack(side="right")
+        self._make_btn(btns, "✅ 确 定", ok, bg="#2A9D8F", fg="white",
                        width=10, small=True, bold=True).pack(side="right", padx=8)
 
         refresh_tree()
@@ -1256,8 +1298,9 @@ class MonitorApp:
 
         add_row = tk.Frame(popup, bg="#FFFFFF")
         add_row.pack(fill="x", padx=8, pady=(2, 6))
-        entry = tk.Entry(add_row, font=("Microsoft YaHei", 9),
-                         bd=1, relief="solid", highlightthickness=0)
+        entry = ctk.CTkEntry(add_row, font=("Microsoft YaHei", 9), height=32,
+                             fg_color="#FAFBFC", text_color=self.COLOR_TEXT,
+                             border_width=1, border_color=self.COLOR_BORDER)
         entry.pack(side="left", fill="x", expand=True, ipady=2)
 
         def _add(e=None):
@@ -1386,42 +1429,60 @@ class MonitorApp:
             name = bm["name"]
             sufs = bm.get("suffixes") or []
             enabled = [s for s in sufs if s.get("enabled", True)]
-            has_no = any(s.get("text", "") == "" for s in enabled)
             n = len(enabled)
-            if has_no and n > 1:
-                text = f"{name}  [{n-1}+无]"
-            elif has_no and n == 1:
-                text = f"{name}  [无后缀]"
-            else:
-                text = f"{name}  [{n}档]"
+            # ★ 书签胶囊：浅绿（选中）/ 浅灰（未选中）
+            var = self._bookmark_var(book_id)
+            selected = bool(var.get())
+            cell_bg = "#E8F5F3" if selected else "#ECEFF1"
+            cell_fg = "#2A9D8F" if selected else "#7A869A"
 
-            # ★ 一个书签 = 一个「小方格 + 按钮」的卡片，整体作为一格参与自动换行
-            cell = tk.Frame(self.bookmark_inner, bg=self.COLOR_CARD)
-            chk = tk.Checkbutton(cell, variable=self._bookmark_var(book_id),
-                                 bg=self.COLOR_CARD, activebackground=self.COLOR_CARD,
-                                 bd=0, highlightthickness=0, cursor="hand2",
-                                 takefocus=0)
-            chk.pack(side="left", padx=(0, 1))
+            cell = ctk.CTkFrame(self.bookmark_inner, fg_color=cell_bg,
+                                corner_radius=14, border_width=0)
 
-            btn = tk.Button(cell, text=text,
-                            font=("Microsoft YaHei", 10, "bold"),
-                            bg=self.COLOR_CARD,
-                            fg="#00695C" if n else "#B71C1C",
-                            activebackground="#F5F7FA",
-                            activeforeground="#004D40" if n else "#B71C1C",
-                            relief="flat", bd=0, cursor="hand2",
-                            padx=4, pady=2, highlightthickness=0,
-                            command=lambda bid=book_id: self.load_bookmark(bid))
-            btn.pack(side="left")
+            name_lbl = ctk.CTkLabel(cell, text=name, text_color=cell_fg,
+                                    font=("Microsoft YaHei", 11, "bold"), anchor="w")
+            name_lbl.pack(side="left", padx=(10, 2), pady=2)
 
-            edit_btn = tk.Label(cell, text="✏", bg=self.COLOR_CARD,
-                                fg="#5DADE2", font=("Microsoft YaHei", 9),
-                                cursor="hand2")
-            edit_btn.pack(side="left", padx=(3, 0))
-            edit_btn.bind("<Button-1>",
-                          lambda e, bid=book_id, c=cell: self._open_suffix_popup(bid, c))
-            btn.bind("<Double-Button-1>", lambda e, bid=book_id: self.start_bookmark_monitor(bid))
-            btn.bind("<Button-3>", lambda e, bid=book_id: self.bookmark_menu(e, bid))
+            spacer = ctk.CTkFrame(cell, fg_color="transparent", width=12, height=1)
+            spacer.pack(side="left")
+
+            count_lbl = ctk.CTkLabel(cell, text=str(n), text_color=cell_fg,
+                                     font=("Microsoft YaHei", 9))
+            count_lbl.pack(side="left", padx=(0, 3), pady=2)
+
+            arrow_lbl = ctk.CTkLabel(cell, text="▼", text_color=cell_fg,
+                                     font=("Microsoft YaHei", 8), cursor="hand2")
+            arrow_lbl.pack(side="left", padx=(0, 8), pady=2)
+
+            def _toggle(e, bid=book_id, c=cell, nl=name_lbl, cl=count_lbl, al=arrow_lbl):
+                v = self._bookmark_var(bid)
+                v.set(not v.get())
+                if v.get():
+                    bg, fg = "#E8F5F3", "#2A9D8F"
+                else:
+                    bg, fg = "#ECEFF1", "#7A869A"
+                c.configure(fg_color=bg)
+                nl.configure(text_color=fg)
+                cl.configure(text_color=fg)
+                al.configure(text_color=fg)
+
+            def _open_popup(e, bid=book_id, c=cell):
+                self._open_suffix_popup(bid, c)
+
+            def _double(e, bid=book_id):
+                self.start_bookmark_monitor(bid)
+
+            def _menu(e, bid=book_id):
+                self.bookmark_menu(e, bid)
+
+            for w in (cell, name_lbl, count_lbl, spacer):
+                w.bind("<Button-1>", _toggle)
+                w.bind("<Double-Button-1>", _double)
+                w.bind("<Button-3>", _menu)
+
+            arrow_lbl.bind("<Button-1>", _open_popup)
+            arrow_lbl.bind("<Button-3>", _menu)
+
             self.bookmark_buttons.append(cell)
             self._bookmark_cells.append(cell)
 
@@ -1433,6 +1494,8 @@ class MonitorApp:
 
     def bookmark_menu(self, event, book_id):
         m = tk.Menu(self.root, tearoff=0)
+        m.add_command(label="📝 填入输入框",
+                      command=lambda: self.load_bookmark(book_id))
         m.add_command(label="监控此书签",
                       command=lambda: self.start_bookmark_monitor(book_id))
         m.add_separator()
@@ -2077,71 +2140,31 @@ class MonitorApp:
     def open_whitelist_words_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("白名单词")
-        win.geometry("560x640")
+        win.geometry("500x560")
         win.configure(bg=self.COLOR_BG)
         win.transient(self.root)
         win.grab_set()
         fix_show_desktop_return(win, self.root)
 
-        tk.Label(win, text="白名单词", bg=self.COLOR_BG, fg=self.COLOR_TEXT,
-                 font=("Microsoft YaHei", 13, "bold")).pack(pady=(16, 2))
-        tk.Label(win,
-                 text="抓到的结果里，只要【标题 / 摘要 / url】包含下面任意一个词，"
-                      "就自动加白（以后不再提示为新盗文）。",
-                 bg=self.COLOR_BG, fg=self.COLOR_MUTED,
-                 font=self.font_small, wraplength=500,
-                 justify="left").pack(padx=20)
+        # 标题
+        ctk.CTkLabel(win, text="🏷 白名单词",
+                     text_color=self.COLOR_TEXT,
+                     font=("Microsoft YaHei", 14, "bold")).pack(pady=(16, 2))
 
-        outer = tk.Frame(win, bg=self.COLOR_BORDER)
-        outer.pack(fill="both", expand=True, padx=20, pady=12)
-        body = tk.Frame(outer, bg=self.COLOR_CARD)
-        body.pack(fill="both", expand=True, padx=1, pady=1)
+        # 说明
+        ctk.CTkLabel(win,
+                     text="抓到的结果里，只要【标题 / 摘要 / url】包含下面任意一个词，就自动加白。",
+                     text_color=self.COLOR_MUTED,
+                     font=("Microsoft YaHei", 9),
+                     wraplength=440, justify="left").pack(padx=20, pady=(0, 10))
 
-        tf = tk.Frame(body, bg=self.COLOR_CARD)
-        tf.pack(fill="both", expand=True, padx=14, pady=(12, 6))
-        tree = ttk.Treeview(tf, columns=("word",), show="headings",
-                            height=12, selectmode="extended")
-        tree.heading("word", text="白名单词")
-        tree.column("word", width=460, anchor="w")
-        tree.pack(side="left", fill="both", expand=True)
-        sb = ttk.Scrollbar(tf, orient="vertical", command=tree.yview)
-        sb.pack(side="right", fill="y")
-        tree.config(yscrollcommand=sb.set)
+        # 输入行
+        input_row = ctk.CTkFrame(win, fg_color=self.COLOR_CARD, corner_radius=8)
+        input_row.pack(fill="x", padx=20, pady=(0, 8))
 
-        def refresh_tree():
-            for i in tree.get_children():
-                tree.delete(i)
-            for w in sorted(self.whitelist_words):
-                tree.insert("", "end", values=(w,))
-
-        def _delete_one(iid):
-            """删掉单个词（双击/Delete 键用）"""
-            w = tree.item(iid, "values")[0]
-            self.whitelist_words.discard(w)
-            self._save_whitelist_words()
-            refresh_tree()
-            self.log(f"🏷️ 已删除白名单词：{w}")
-
-        def _on_double_click(event):
-            iid = tree.identify_row(event.y)
-            if iid:
-                _delete_one(iid)
-
-        def _on_delete_key(event):
-            for iid in tree.selection():
-                _delete_one(iid)
-
-        tree.bind("<Double-1>", _on_double_click)
-        tree.bind("<Delete>", _on_delete_key)
-        tree.bind("<BackSpace>", _on_delete_key)
-
-        row_frame = tk.Frame(body, bg=self.COLOR_CARD)
-        row_frame.pack(fill="x", padx=14, pady=(0, 6))
-        ent = tk.Entry(row_frame, font=self.font_normal,
-                       bd=1, relief="solid", highlightthickness=0,
-                       bg="#FAFBFC", fg=self.COLOR_TEXT,
-                       insertbackground=self.COLOR_TEXT)
-        ent.pack(side="left", fill="x", expand=True, ipady=4)
+        ent = ctk.CTkEntry(input_row, placeholder_text="输入词，逗号 / 空格 / 分号分隔",
+                           font=("Microsoft YaHei", 11), height=32)
+        ent.pack(side="left", fill="x", expand=True, padx=(8, 6), pady=8)
 
         def add():
             v = ent.get().strip()
@@ -2153,32 +2176,63 @@ class MonitorApp:
                 if part and part not in self.whitelist_words:
                     self.whitelist_words.add(part)
                     added += 1
-            ent.delete(0, tk.END)
+            ent.delete(0, "end")
             if added:
                 self._save_whitelist_words()
-                refresh_tree()
+                refresh_list()
                 n = self._apply_whitelist_words_to_rows()
                 self.log(f"🏷️ 已新增 {added} 个白名单词"
                          + (f"，当前结果里自动加白 {n} 条" if n else ""))
 
         ent.bind("<Return>", lambda e: add())
-        self._make_btn(row_frame, "➕ 新增", add, bg=self.COLOR_PRIMARY,
-                       width=8, small=True).pack(side="left", padx=(6, 0))
+        ctk.CTkButton(input_row, text="➕ 添加", command=add,
+                      fg_color="#2A9D8F", hover_color="#21867A",
+                      text_color="white", font=("Microsoft YaHei", 11, "bold"),
+                      width=80, height=32, corner_radius=6).pack(side="left", padx=(0, 8), pady=8)
 
-        btns = tk.Frame(body, bg=self.COLOR_CARD)
-        btns.pack(fill="x", padx=14, pady=(4, 12))
+        # 计数
+        count_label = ctk.CTkLabel(win, text="", text_color=self.COLOR_MUTED,
+                                   font=("Microsoft YaHei", 9), anchor="w")
+        count_label.pack(fill="x", padx=24, pady=(0, 4))
 
-        def del_sel():
-            sel = tree.selection()
-            if not sel:
-                messagebox.showinfo("提示", "请先选中要删除的词。", parent=win)
+        # 词列表（可滚动）
+        list_frame = ctk.CTkScrollableFrame(win, fg_color=self.COLOR_CARD,
+                                             corner_radius=8,
+                                             scrollbar_button_color="#B0BEC5",
+                                             scrollbar_button_hover_color="#90A4AE")
+        list_frame.pack(fill="both", expand=True, padx=20, pady=(0, 8))
+
+        def refresh_list():
+            for w in list_frame.winfo_children():
+                w.destroy()
+            count_label.configure(text=f"共 {len(self.whitelist_words)} 个词")
+            if not self.whitelist_words:
+                ctk.CTkLabel(list_frame, text="（还没有白名单词）",
+                             text_color=self.COLOR_MUTED,
+                             font=("Microsoft YaHei", 9)).pack(pady=20)
                 return
-            for iid in sel:
-                w = tree.item(iid, "values")[0]
-                self.whitelist_words.discard(w)
-            self._save_whitelist_words()
-            refresh_tree()
-            self.log("🏷️ 已删除选中的白名单词")
+            for w in sorted(self.whitelist_words):
+                row = ctk.CTkFrame(list_frame, fg_color="transparent")
+                row.pack(fill="x", pady=2)
+                ctk.CTkLabel(row, text=w, text_color=self.COLOR_TEXT,
+                             font=("Microsoft YaHei", 10), anchor="w").pack(
+                    side="left", fill="x", expand=True, padx=(8, 4))
+
+                def _del_word(word=w):
+                    self.whitelist_words.discard(word)
+                    self._save_whitelist_words()
+                    refresh_list()
+                    self.log(f"🏷️ 已删除白名单词：{word}")
+
+                ctk.CTkButton(row, text="🗑", command=_del_word,
+                              fg_color="transparent", hover_color="#FDE2E2",
+                              text_color="#E63946", width=32, height=28,
+                              font=("Microsoft YaHei", 11),
+                              corner_radius=4).pack(side="right", padx=(0, 4))
+
+        # 底部工具栏
+        btns = ctk.CTkFrame(win, fg_color="transparent")
+        btns.pack(fill="x", padx=20, pady=(0, 14))
 
         def clear_all():
             if not self.whitelist_words:
@@ -2187,17 +2241,20 @@ class MonitorApp:
                 return
             self.whitelist_words.clear()
             self._save_whitelist_words()
-            refresh_tree()
+            refresh_list()
             self.log("🏷️ 已清空全部白名单词")
 
-        self._make_btn(btns, "🗑️ 删除选中", del_sel, bg="#EF5350",
-                       width=11, small=True).pack(side="left")
-        self._make_btn(btns, "🧹 清空全部", clear_all, bg="#546E7A",
-                       width=11, small=True).pack(side="left", padx=8)
-        self._make_btn(btns, "关 闭", win.destroy, bg="#B0BEC5",
-                       fg="#263238", width=8, small=True).pack(side="right")
+        ctk.CTkLabel(btns, text="", width=1).pack(side="left", expand=True)
+        ctk.CTkButton(btns, text="🧹 清空全部", command=clear_all,
+                      fg_color="#ECEFF1", hover_color="#DDE2E6",
+                      text_color="#455A64", font=("Microsoft YaHei", 10),
+                      width=100, height=32, corner_radius=6).pack(side="left")
+        ctk.CTkButton(btns, text="关闭", command=win.destroy,
+                      fg_color="#2A9D8F", hover_color="#21867A",
+                      text_color="white", font=("Microsoft YaHei", 10, "bold"),
+                      width=80, height=32, corner_radius=6).pack(side="right")
 
-        refresh_tree()
+        refresh_list()
         ent.focus_set()
 
     def _do_pending_refresh(self):
@@ -2760,9 +2817,9 @@ class MonitorApp:
         self._last_term_status = None
         self._last_enabled_sources = []
         for b in (self.btn_patrol, self.btn_batch):
-            b.config(state="disabled", bg="#B0BEC5", activebackground="#B0BEC5", fg="#607D8B")
-        self.btn_stop.config(state="normal", bg=self.COLOR_DANGER,
-                             activebackground=self.COLOR_DANGER, fg="white")
+            b.configure(state="disabled", fg_color="#B0BEC5", hover_color="#B0BEC5", text_color="#607D8B")
+        self.btn_stop.configure(state="normal", fg_color=self.COLOR_DANGER,
+                                hover_color=self.COLOR_DANGER, text_color="white")
         for chk in (self.chk_headless, self.chk_deep):
             try:
                 chk.config(state="disabled")
@@ -2823,11 +2880,11 @@ class MonitorApp:
         # 检查是否有重定向链接
         self._check_redirects_summary()
 
-        self.btn_patrol.config(state="normal", bg=self.COLOR_WARNING,
-                               activebackground=self.COLOR_WARNING, fg="white")
-        self.btn_batch.config(state="normal", bg=self.COLOR_INFO,
-                              activebackground=self.COLOR_INFO, fg="white")
-        self.btn_stop.config(state="disabled", bg="#B0BEC5", activebackground="#B0BEC5", fg="#607D8B")
+        self.btn_patrol.configure(state="normal", fg_color="#2A9D8F",
+                                  hover_color="#21867A", text_color="white")
+        self.btn_batch.configure(state="normal", fg_color="#2A9D8F",
+                                 hover_color="#21867A", text_color="white")
+        self.btn_stop.configure(state="disabled", fg_color="#B0BEC5", hover_color="#B0BEC5", text_color="#607D8B")
         for chk in (self.chk_headless, self.chk_deep):
             try:
                 chk.config(state="normal")
